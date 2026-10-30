@@ -1,10 +1,12 @@
 import { useEffect } from 'react'
+import { TemplatesDialog, Tutorial } from './components/Dialogs'
 import ExportDialog from './components/ExportDialog'
 import Inspector from './components/Inspector'
 import MediaPanel from './components/MediaPanel'
 import Player from './components/Player'
 import Timeline from './components/Timeline'
 import TopBar from './components/TopBar'
+import { useT } from './i18n'
 import { registerFile } from './media'
 import { loadProject, saveProject } from './persist'
 import { useProject } from './store'
@@ -18,8 +20,11 @@ const isTyping = (t: EventTarget | null) => {
 }
 
 export default function App() {
+  const t = useT()
   const exportOpen = useUi((s) => s.exportOpen)
   const notice = useUi((s) => s.notice)
+  const templatesOpen = useUi((s) => s.templatesOpen)
+  const tourOpen = useUi((s) => s.tourOpen)
 
   // Mở lại dự án đã lưu, sau đó tự lưu mỗi khi có thay đổi
   useEffect(() => {
@@ -39,6 +44,16 @@ export default function App() {
       timer = setTimeout(() => void saveProject(s.project), 500)
     })
     return () => { unsub(); clearTimeout(timer) }
+  }, [])
+
+  // Lỗi bất ngờ (không phải do người dùng huỷ) → báo nhẹ nhàng, không làm mất dự án
+  useEffect(() => {
+    const onRej = (e: PromiseRejectionEvent) => {
+      if (e.reason instanceof DOMException && e.reason.name === 'AbortError') return
+      useUi.getState().setNotice('Có lỗi nhỏ xảy ra, nhưng dự án vẫn an toàn. Nếu lặp lại, hãy tải lại trang.')
+    }
+    window.addEventListener('unhandledrejection', onRej)
+    return () => window.removeEventListener('unhandledrejection', onRej)
   }, [])
 
   // Phím tắt giống CapCut
@@ -74,9 +89,11 @@ export default function App() {
       </div>
       <Timeline />
       {exportOpen && <ExportDialog />}
+      {templatesOpen && <TemplatesDialog />}
+      {tourOpen && <Tutorial />}
       {notice && (
         <div role="alert" className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg px-4 py-2 text-sm shadow-lg" style={{ background: 'var(--panel-2)', border: '1px solid var(--line)' }}>
-          {notice}
+          {t(notice)}
         </div>
       )}
     </div>

@@ -3,17 +3,21 @@ import { getFile, kindOf, probe, registerFile, unregisterFile } from './media'
 import { deleteFile, saveFile } from './persist'
 import { hasKfAt, removeKfAt, resolveClip, upsertKf, withProp } from './fx/anim'
 import { DEFAULT_TEXT } from './fx/catalog'
+import { CAPTION_STYLES, wrapCaption, type Template } from './fx/templates'
+import { decodeAsset, findSilences, forgetAudio, loudnessDb } from './audio'
 import {
   addClip, addTextClip, clamp, clipDur, clipEnd, deleteClip, duplicateClip, pasteClip, projectDuration,
-  setSpeed as opSetSpeed, splitClip,
+  removeRanges, setSpeed as opSetSpeed, splitClip,
 } from './timeline/ops'
 import { transitionDur } from './timeline/pick'
 import type { Background, Clip, Fx, KfProp, Project, Ratio, TextProps } from './types'
+import { translate } from './i18n'
 import { useUi } from './ui'
 
 const HISTORY = 100
 const uid = () => Math.random().toString(36).slice(2, 10)
 const notify = (m: string) => useUi.getState().setNotice(m)
+const T = (s: string) => translate(useUi.getState().lang, s)
 
 export function defaultProject(): Project {
   const track = (id: string, kind: 'video' | 'audio' | 'text', name: string) => ({ id, kind, name, muted: false, hidden: false })
@@ -73,7 +77,7 @@ interface ProjectState {
   setName: (n: string) => void
   setRatio: (r: Ratio) => void
   toggleTrack: (id: string, key: 'muted' | 'hidden') => void
-  addAssets: (files: File[]) => Promise<void>
+  addAssets: (files: File[]) => Promise<string[]>
   removeAsset: (id: string) => void
   addToTimeline: (assetId: string, trackId?: string, start?: number) => void
   split: () => void
@@ -92,6 +96,13 @@ interface ProjectState {
   setTransition: (id: string | null, dur?: number) => void
   setAnim: (kind: 'in' | 'out' | 'loop', id: string | null, dur?: number) => void
   setBg: (bg: Background) => void
+  extractAudio: () => void
+  cutSilence: () => Promise<void>
+  normalizeVolumes: () => Promise<void>
+  addCaptions: (items: { start: number; end: number; text: string }[], styleId?: string, append?: boolean) => number
+  styleCaptions: (styleId: string) => void
+  applyTemplate: (t: Template) => void
+  newProject: () => void
 }
 
 export const useProject = create<ProjectState>((set, get) => ({
@@ -169,10 +180,11 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   addAssets: async (files) => {
+    const ids: string[] = []
     for (const file of files) {
       const kind = kindOf(file)
       if (!kind) {
-        notify(`"${file.name}" không phải video, nhạc hoặc ảnh nên chưa nhập được.`)
+        notify(`"${file.name}" ${T('không phải video, nhạc hoặc ảnh nên chưa nhập được.')}`)
         continue
       }
       try {
@@ -181,16 +193,19 @@ export const useProject = create<ProjectState>((set, get) => ({
         registerFile(id, file)
         void saveFile(id, file)
         set((s) => ({ project: { ...s.project, assets: [...s.project.assets, { id, ...meta }] } }))
+        ids.push(id)
       } catch {
-        notify(`Không đọc được "${file.name}". Hãy thử định dạng phổ biến như MP4, MP3, JPG, PNG.`)
+        notify(`${T('Không đọc được')} "${file.name}". ${T('Hãy thử định dạng phổ biến như MP4, MP3, JPG, PNG.')}`)
       }
     }
+    return ids
   },
 
   removeAsset: (id) => {
     const p = get().project
     get().commit({ ...p, assets: p.assets.filter((a) => a.id !== id), clips: p.clips.filter((c) => c.assetId !== id) })
     unregisterFile(id)
+    forgetAudio(id)
     void deleteFile(id)
   },
 
@@ -335,6 +350,111 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   setBg: (bg) => get().commit({ ...get().project, bg }),
+
+  // Tách tiếng của clip video ra một clip riêng trên dòng âm thanh, rồi tắt tiếng clip gốc
+  extractAudio: () => {
+    const { project, selectedId } = get()
+    const c = project.clips.find((x) => x.id === selectedId)
+    const asset = c && project.assets.find((a) => a.id === c.assetId)
+    if (!c || !asset || asset.kind !== 'video') return notify('Hãy chọn một clip video để tách tiếng.')
+    const dur = clipDur(c)
+    const track = project.tracks.find(
+      (t) => t.kind === 'audio' && !project.clips.some((o) => o.trackId === t.id && o.start < c.start + dur - 1e-6 && clipEnd(o) > c.start + 1e-6),
+    )
+    if (!track) return notify('Hai dòng âm thanh đều đang có clip ở chỗ này. Hãy dời clip nhạc đi rồi thử lại.')
+    const id = uid()
+    const audio: Clip = { ...c, id, trackId: track.id, muted: false, fx: undefined, kfs: undefined }
+    get().commit({ ...project, clips: [...project.clips.map((x) => (x.id === c.id ? { ...x, muted: true } : x)), audio] })
+    set({ selectedId: id })
+    notify('Đã tách tiếng ra dòng âm thanh. Clip video gốc đã được tắt tiếng.')
+  },
+
+  // Tự cắt các khoảng lặng trong clip đang chọn rồi nối liền lại
+  cutSilence: async () => {
+    const { project, selectedId } = get()
+    const c = project.clips.find((x) => x.id === selectedId)
+    const asset = c && project.assets.find((a) => a.id === c.assetId)
+    if (!c || !asset || asset.kind === 'image') return notify('Hãy chọn một clip video hoặc nhạc có tiếng.')
+    notify('Đang tìm khoảng lặng…')
+    const buf = await decodeAsset(asset.id)
+    if (!buf) return notify('Clip này không có âm thanh nên không cắt khoảng lặng được.')
+    const silences = findSilences(buf, c.inPoint, c.outPoint)
+    const next = removeRanges(get().project, c.id, silences, uid)
+    if (!next) return notify('Không thấy khoảng lặng nào đủ dài (từ nửa giây trở lên).')
+    const removed = silences.reduce((s, [a, b]) => s + (b - a), 0) / c.speed
+    get().commit(next)
+    notify(`${T('Đã cắt')} ${silences.length} ${T('khoảng lặng, ngắn đi')} ${removed.toFixed(1)} ${T('giây.')}`)
+  },
+
+  // Cân bằng âm lượng: đưa mọi clip về cùng mức to (không khuếch đại, chỉ hạ clip quá to)
+  normalizeVolumes: async () => {
+    const p = get().project
+    const target = -20
+    const clips: Clip[] = []
+    let n = 0
+    for (const c of p.clips) {
+      const asset = p.assets.find((a) => a.id === c.assetId)
+      if (!asset || asset.kind === 'image' || c.muted) { clips.push(c); continue }
+      const buf = await decodeAsset(asset.id)
+      if (!buf) { clips.push(c); continue }
+      const db = loudnessDb(buf, c.inPoint, c.outPoint)
+      clips.push({ ...c, volume: clamp(Math.pow(10, (target - db) / 20), 0.05, 1) })
+      n++
+    }
+    if (!n) return notify('Chưa có clip nào có tiếng để cân bằng.')
+    get().commit({ ...get().project, clips })
+    notify(`${T('Đã cân bằng âm lượng cho')} ${n} clip.`)
+  },
+
+  addCaptions: (items, styleId = 'classic', append = false) => {
+    const style = CAPTION_STYLES.find((s) => s.id === styleId) ?? CAPTION_STYLES[0]
+    let p = get().project
+    if (!p.tracks.some((t) => t.id === 'cap')) {
+      p = { ...p, tracks: [{ id: 'cap', kind: 'text', name: 'Phụ đề', muted: false, hidden: false }, ...p.tracks] }
+    }
+    const sorted = [...items].filter((i) => i.text.trim() && i.end > i.start).sort((a, b) => a.start - b.start)
+    const clips: Clip[] = sorted.map((it, i) => {
+      const end = Math.min(it.end, sorted[i + 1]?.start ?? it.end) // không để hai phụ đề chồng nhau
+      return {
+        id: uid(), assetId: '', trackId: 'cap', start: Math.max(0, it.start), inPoint: 0, outPoint: Math.max(0.3, end - it.start),
+        speed: 1, volume: 1, muted: true, cap: true, fx: { y: style.y }, text: { ...style.props, text: wrapCaption(it.text) },
+      }
+    })
+    get().commit({ ...p, clips: [...(append ? p.clips : p.clips.filter((c) => !c.cap)), ...clips] })
+    return clips.length
+  },
+
+  styleCaptions: (styleId) => {
+    const style = CAPTION_STYLES.find((s) => s.id === styleId)
+    if (!style) return
+    const p = get().project
+    get().commit({
+      ...p,
+      clips: p.clips.map((c) => (c.cap && c.text ? { ...c, fx: { ...c.fx, y: style.y }, text: { ...style.props, text: c.text.text } } : c)),
+    })
+  },
+
+  applyTemplate: (t) => {
+    let p: Project = { ...get().project, ratio: t.ratio, bg: t.bg }
+    for (const x of t.texts) {
+      const id = uid()
+      const next = addTextClip(p, 't1', x.start, id, x.props, x.dur)
+      if (!next) continue
+      p = { ...next, clips: next.clips.map((c) => (c.id === id ? { ...c, fx: { y: x.y, animIn: { id: 'pop', dur: 0.5 } } } : c)) }
+    }
+    get().commit(p)
+    notify(`${T('Đã áp dụng mẫu')} "${T(t.label)}". ${T('Hãy thêm video của bạn và sửa chữ ở bảng bên phải.')}`)
+  },
+
+  newProject: () => {
+    for (const a of get().project.assets) {
+      unregisterFile(a.id)
+      forgetAudio(a.id)
+      void deleteFile(a.id)
+    }
+    set({ project: defaultProject(), selectedId: null, playhead: 0, playing: false, past: [], future: [], clipboard: null, gestureBase: null })
+  },
+
 
   patchClip: (id, patch, live) => {
     const p = get().project

@@ -102,6 +102,11 @@ export interface Clip {
   speed: number
   volume: number
   muted: boolean
+  /** Âm lượng mờ dần vào / ra (giây) */
+  fadeIn?: number
+  fadeOut?: number
+  /** Clip phụ đề (tạo tự động hoặc nhập từ .srt) */
+  cap?: boolean
   fx?: Partial<Fx>
   kfs?: Partial<Record<KfProp, Keyframe[]>>
   text?: TextProps

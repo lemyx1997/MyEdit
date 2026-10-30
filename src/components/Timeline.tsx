@@ -7,12 +7,15 @@ import {
 } from '../timeline/ops'
 import { fxOf } from '../fx/anim'
 import type { Clip } from '../types'
+import { useT } from '../i18n'
+import Waveform from './Waveform'
 
 const LANE_H = 48
 const HEADER_W = 112
 const SNAP_PX = 8
 
 export default function Timeline() {
+  const t = useT()
   const project = useProject((s) => s.project)
   const selectedId = useProject((s) => s.selectedId)
   const playhead = useProject((s) => s.playhead)
@@ -94,19 +97,19 @@ export default function Timeline() {
   return (
     <footer className="flex h-60 shrink-0 flex-col border-t" style={{ background: 'var(--panel)', borderColor: 'var(--line)' }}>
       <div className="flex h-8 shrink-0 items-center gap-1 border-b px-2 text-xs" style={{ borderColor: 'var(--line)' }}>
-        <button className={btn} onClick={() => act().split()} title="Tách tại kim chỉ (Ctrl+B)">✂ Tách</button>
-        <button className={btn} onClick={() => act().deleteSelected()} title="Xoá clip (Delete)">🗑 Xoá</button>
-        <button className={btn} onClick={() => act().duplicateSelected()} title="Nhân đôi clip">⧉ Nhân đôi</button>
+        <button className={btn} onClick={() => act().split()} title={t('Tách tại kim chỉ (Ctrl+B)')}>✂ {t('Tách')}</button>
+        <button className={btn} onClick={() => act().deleteSelected()} title={t('Xoá clip (Delete)')}>🗑 {t('Xoá')}</button>
+        <button className={btn} onClick={() => act().duplicateSelected()} title={t('Nhân đôi clip')}>⧉ {t('Nhân đôi')}</button>
         <button
           className={btn}
           onClick={() => act().toggleSnap()}
-          title="Bật/tắt nam châm hít"
+          title={t('Bật/tắt nam châm hít')}
           style={snap ? { color: 'var(--accent)' } : { color: 'var(--muted)' }}
         >
-          🧲 Hít {snap ? 'bật' : 'tắt'}
+          🧲 {t('Hít')} {snap ? t('bật') : t('tắt')}
         </button>
         <label className="ml-auto flex items-center gap-2" style={{ color: 'var(--muted)' }}>
-          Thu phóng
+          {t('Thu phóng')}
           <input type="range" min={10} max={200} value={pps} onChange={(e) => act().setZoom(+e.target.value)} />
         </label>
       </div>
@@ -133,12 +136,12 @@ export default function Timeline() {
                   className="sticky left-0 z-10 flex shrink-0 items-center justify-between border-r px-2 text-xs"
                   style={{ width: HEADER_W, background: 'var(--panel-2)', borderColor: 'var(--line)', color: 'var(--muted)' }}
                 >
-                  <span className="truncate">{track.name}</span>
+                  <span className="truncate">{t(track.name)}</span>
                   <span className="flex gap-1">
                     {track.kind === 'video' && (
-                      <button title="Ẩn/hiện hình" onClick={() => act().toggleTrack(track.id, 'hidden')} style={{ opacity: track.hidden ? 0.35 : 1 }}>👁</button>
+                      <button title={t('Ẩn/hiện hình')} onClick={() => act().toggleTrack(track.id, 'hidden')} style={{ opacity: track.hidden ? 0.35 : 1 }}>👁</button>
                     )}
-                    <button title="Tắt/bật tiếng" onClick={() => act().toggleTrack(track.id, 'muted')} style={{ opacity: track.muted ? 0.35 : 1 }}>🔊</button>
+                    <button title={t('Tắt/bật tiếng')} onClick={() => act().toggleTrack(track.id, 'muted')} style={{ opacity: track.muted ? 0.35 : 1 }}>🔊</button>
                   </span>
                 </div>
                 <div
@@ -170,16 +173,21 @@ export default function Timeline() {
                             height: LANE_H - 8,
                             outline: sel ? '2px solid var(--accent)' : '1px solid rgba(255,255,255,0.15)',
                             background: track.kind === 'audio' ? '#0f766e' : track.kind === 'text' ? '#5b21b6' : '#1e3a5f',
-                            backgroundImage: a?.thumb ? `url(${a.thumb})` : undefined,
+                            backgroundImage: a?.thumb && track.kind !== 'audio' ? `url(${a.thumb})` : undefined,
                             backgroundSize: 'auto 100%',
                             backgroundRepeat: 'repeat-x',
                             opacity: track.hidden ? 0.4 : 1,
                           }}
                         >
-                          <div className="truncate bg-black/55 px-1">
+                          {a && a.kind !== 'image' && !c.muted && (
+                            <div className={track.kind === 'audio' ? 'absolute inset-0' : 'absolute inset-x-0 bottom-0 h-3 bg-black/40'}>
+                              <Waveform assetId={a.id} inPoint={c.inPoint} outPoint={c.outPoint} duration={a.duration} width={clipDur(c) * pps} height={track.kind === 'audio' ? LANE_H - 8 : 12} />
+                            </div>
+                          )}
+                          <div className="relative truncate bg-black/55 px-1">
                             {c.text ? c.text.text.split('\n')[0] : a?.name} {c.speed !== 1 && `· ${c.speed.toFixed(1)}x`}
                           </div>
-                          {fxOf(c).transition && <div className="absolute bottom-0 left-2 rounded-tr bg-amber-400 px-1 text-[9px] font-bold text-black" title="Có chuyển cảnh">⇆</div>}
+                          {fxOf(c).transition && <div className="absolute bottom-0 left-2 rounded-tr bg-amber-400 px-1 text-[9px] font-bold text-black" title={t('Có chuyển cảnh')}>⇆</div>}
                           <div onPointerDown={(e) => startDrag(e, c, 'l')} className="absolute inset-y-0 left-0 w-2 cursor-ew-resize bg-white/40" />
                           <div onPointerDown={(e) => startDrag(e, c, 'r')} className="absolute inset-y-0 right-0 w-2 cursor-ew-resize bg-white/40" />
                         </div>

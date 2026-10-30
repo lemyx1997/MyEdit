@@ -1,7 +1,9 @@
 import { DEFAULT_ADJUST, fxOf } from '../fx/anim'
-import { ANIM_IN_OUT, ANIM_LOOP, FILTERS, STICKERS, TEXT_PRESETS, TRANSITIONS, DEFAULT_TEXT } from '../fx/catalog'
+import { ANIM_IN_OUT, ANIM_LOOP, DEFAULT_TEXT, FILTERS, STICKERS, TEXT_PRESETS, TRANSITIONS } from '../fx/catalog'
+import { useT } from '../i18n'
 import { useProject } from '../store'
 import type { Tab } from '../ui'
+import { AudioPanel, CaptionsPanel } from './AudioPanels'
 import { Chip, Slider, line } from './ui'
 
 function useSelected() {
@@ -13,10 +15,11 @@ function useSelected() {
 const hint = (t: string) => <p className="mb-2 text-xs" style={{ color: 'var(--muted)' }}>{t}</p>
 
 function TextPanel() {
+  const t = useT()
   const addText = useProject((s) => s.addText)
   return (
     <>
-      {hint('Bấm một mẫu để thêm chữ vào vị trí kim chỉ. Sửa nội dung ở bảng bên phải.')}
+      {hint(t('Bấm một mẫu để thêm chữ vào vị trí kim chỉ. Sửa nội dung ở bảng bên phải.'))}
       <div className="grid grid-cols-2 gap-2">
         {TEXT_PRESETS.map((p) => (
           <button
@@ -24,7 +27,7 @@ function TextPanel() {
             onClick={() => addText(p.props)}
             className="flex h-16 items-center justify-center overflow-hidden rounded border px-1 text-center"
             style={{ ...line, background: '#222a35' }}
-            title={p.label}
+            title={t(p.label)}
           >
             <span
               style={{
@@ -40,7 +43,7 @@ function TextPanel() {
                 borderRadius: 4,
               }}
             >
-              {p.label}
+              {t(p.label)}
             </span>
           </button>
         ))}
@@ -50,10 +53,11 @@ function TextPanel() {
 }
 
 function StickerPanel() {
+  const t = useT()
   const addText = useProject((s) => s.addText)
   return (
     <>
-      {hint('Bấm để thêm nhãn dán. Muốn dùng ảnh PNG/GIF của riêng bạn, hãy nhập ở tab Phương tiện rồi kéo lên dòng Video 2.')}
+      {hint(t('Bấm để thêm nhãn dán. Muốn dùng ảnh PNG/GIF của riêng bạn, hãy nhập ở tab Phương tiện rồi kéo lên dòng Video 2.'))}
       <div className="grid grid-cols-6 gap-1">
         {STICKERS.map((e) => (
           <button
@@ -70,48 +74,50 @@ function StickerPanel() {
 }
 
 function EffectsPanel() {
+  const t = useT()
   const { clip } = useSelected()
   const setAnim = useProject((s) => s.setAnim)
-  if (!clip) return hint('Chọn một clip trên dòng thời gian, rồi bấm hoạt ảnh muốn dùng.')
+  if (!clip) return hint(t('Chọn một clip trên dòng thời gian, rồi bấm hoạt ảnh muốn dùng.'))
   const fx = fxOf(clip)
   const grid = (items: { id: string; label: string }[], cur: string | null | undefined, apply: (id: string | null) => void) => (
     <div className="mb-4 flex flex-wrap gap-1.5">
-      <Chip active={!cur} onClick={() => apply(null)}>Không</Chip>
+      <Chip active={!cur} onClick={() => apply(null)}>{t('Không')}</Chip>
       {items.map((a) => (
-        <Chip key={a.id} active={cur === a.id} onClick={() => apply(a.id)}>{a.label}</Chip>
+        <Chip key={a.id} active={cur === a.id} onClick={() => apply(a.id)}>{t(a.label)}</Chip>
       ))}
     </div>
   )
   return (
     <>
-      <h4 className="mb-1 text-xs font-semibold">Hoạt ảnh vào</h4>
+      <h4 className="mb-1 text-xs font-semibold">{t('Hoạt ảnh vào')}</h4>
       {grid(ANIM_IN_OUT, fx.animIn?.id, (id) => setAnim('in', id, fx.animIn?.dur ?? 0.6))}
-      <h4 className="mb-1 text-xs font-semibold">Hoạt ảnh ra</h4>
+      <h4 className="mb-1 text-xs font-semibold">{t('Hoạt ảnh ra')}</h4>
       {grid(ANIM_IN_OUT, fx.animOut?.id, (id) => setAnim('out', id, fx.animOut?.dur ?? 0.6))}
-      <h4 className="mb-1 text-xs font-semibold">Hoạt ảnh lặp</h4>
+      <h4 className="mb-1 text-xs font-semibold">{t('Hoạt ảnh lặp')}</h4>
       {grid(ANIM_LOOP, fx.animLoop, (id) => setAnim('loop', id))}
-      {hint('Chỉnh thời lượng hoạt ảnh ở bảng Thuộc tính bên phải.')}
+      {hint(t('Chỉnh thời lượng hoạt ảnh ở bảng Thuộc tính bên phải.'))}
     </>
   )
 }
 
 function TransitionsPanel() {
+  const t = useT()
   const { clip } = useSelected()
   const setTransition = useProject((s) => s.setTransition)
   const endGesture = useProject((s) => s.endGesture)
   const fx = clip ? fxOf(clip) : null
   return (
     <>
-      {hint('Chọn clip đứng SAU chỗ nối (hai clip phải nằm sát nhau trên cùng một dòng), rồi bấm kiểu chuyển cảnh.')}
+      {hint(t('Chọn clip đứng SAU chỗ nối (hai clip phải nằm sát nhau trên cùng một dòng), rồi bấm kiểu chuyển cảnh.'))}
       <div className="mb-3 flex flex-wrap gap-1.5">
-        <Chip active={!fx?.transition} onClick={() => setTransition(null)}>Không</Chip>
-        {TRANSITIONS.map((t) => (
-          <Chip key={t.id} active={fx?.transition?.id === t.id} onClick={() => setTransition(t.id, fx?.transition?.dur ?? 1)}>{t.label}</Chip>
+        <Chip active={!fx?.transition} onClick={() => setTransition(null)}>{t('Không')}</Chip>
+        {TRANSITIONS.map((x) => (
+          <Chip key={x.id} active={fx?.transition?.id === x.id} onClick={() => setTransition(x.id, fx?.transition?.dur ?? 1)}>{t(x.label)}</Chip>
         ))}
       </div>
       {fx?.transition && (
         <Slider
-          label="Thời lượng" value={fx.transition.dur} min={0.2} max={3} step={0.1} fmt={(v) => `${v.toFixed(1)}s`}
+          label={t('Thời lượng')} value={fx.transition.dur} min={0.2} max={3} step={0.1} fmt={(v) => `${v.toFixed(1)}s`}
           onChange={(v) => setTransition(fx.transition!.id, v)} onEnd={endGesture}
         />
       )}
@@ -120,6 +126,7 @@ function TransitionsPanel() {
 }
 
 function FiltersPanel() {
+  const t = useT()
   const { clip, asset } = useSelected()
   const patchFx = useProject((s) => s.patchFx)
   const endGesture = useProject((s) => s.endGesture)
@@ -127,7 +134,7 @@ function FiltersPanel() {
   const bg = asset?.thumb ? `center / cover url(${asset.thumb})` : 'linear-gradient(135deg,#f97316,#eab308 30%,#22c55e 55%,#06b6d4 78%,#6366f1)'
   return (
     <>
-      {hint(clip ? 'Bấm một bộ lọc để áp dụng cho clip đang chọn.' : 'Chọn một clip trên dòng thời gian trước.')}
+      {hint(clip ? t('Bấm một bộ lọc để áp dụng cho clip đang chọn.') : t('Chọn một clip trên dòng thời gian trước.'))}
       <div className="grid grid-cols-3 gap-2">
         {FILTERS.map((f) => (
           <button key={f.id} onClick={() => patchFx({ filter: f.id })} className="text-center text-[11px]">
@@ -135,14 +142,14 @@ function FiltersPanel() {
               className="h-14 rounded"
               style={{ background: bg, filter: f.css || undefined, outline: fx?.filter === f.id ? '2px solid var(--accent)' : undefined }}
             />
-            <div className="mt-0.5 truncate">{f.label}</div>
+            <div className="mt-0.5 truncate">{t(f.label)}</div>
           </button>
         ))}
       </div>
       {fx && fx.filter !== 'none' && (
         <div className="mt-3">
           <Slider
-            label="Độ đậm bộ lọc" value={fx.filterStrength} min={0} max={1} step={0.01} fmt={(v) => `${Math.round(v * 100)}%`}
+            label={t('Độ đậm bộ lọc')} value={fx.filterStrength} min={0} max={1} step={0.01} fmt={(v) => `${Math.round(v * 100)}%`}
             onChange={(v) => patchFx({ filterStrength: v }, true)} onEnd={endGesture}
           />
         </div>
@@ -162,33 +169,36 @@ const ADJ: { key: keyof typeof DEFAULT_ADJUST; label: string; min: number; max: 
 ]
 
 function AdjustPanel() {
+  const t = useT()
   const { clip } = useSelected()
   const patchFx = useProject((s) => s.patchFx)
   const endGesture = useProject((s) => s.endGesture)
-  if (!clip) return hint('Chọn một clip trên dòng thời gian để chỉnh màu.')
+  if (!clip) return hint(t('Chọn một clip trên dòng thời gian để chỉnh màu.'))
   const adj = fxOf(clip).adjust
   return (
     <div className="space-y-3">
       {ADJ.map((a) => (
         <Slider
-          key={a.key} label={a.label} value={adj[a.key]} min={a.min} max={a.max} step={0.01}
+          key={a.key} label={t(a.label)} value={adj[a.key]} min={a.min} max={a.max} step={0.01}
           fmt={(v) => `${Math.round(v * 100)}`}
           onChange={(v) => patchFx({ adjust: { ...adj, [a.key]: v } }, true)} onEnd={endGesture}
         />
       ))}
-      <button className="w-full rounded border py-1 text-sm" style={line} onClick={() => patchFx({ adjust: DEFAULT_ADJUST })}>Đặt lại</button>
+      <button className="w-full rounded border py-1 text-sm" style={line} onClick={() => patchFx({ adjust: DEFAULT_ADJUST })}>{t('Đặt lại')}</button>
     </div>
   )
 }
 
 export default function Library({ tab }: { tab: Tab }) {
   switch (tab) {
+    case 'audio': return <AudioPanel />
+    case 'captions': return <CaptionsPanel />
     case 'text': return <TextPanel />
     case 'stickers': return <StickerPanel />
     case 'effects': return <EffectsPanel />
     case 'transitions': return <TransitionsPanel />
     case 'filters': return <FiltersPanel />
     case 'adjust': return <AdjustPanel />
-    default: return hint('Mục này sẽ được làm ở giai đoạn sau (nhạc, ghi âm, phụ đề tự động).')
+    default: return null
   }
 }

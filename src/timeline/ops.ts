@@ -187,3 +187,40 @@ export function snapMove(start: number, dur: number, candidates: number[], thres
   }
   return best === null ? start : start + best
 }
+
+/**
+ * Bỏ các đoạn (tính theo giây trên file gốc) khỏi một clip. Phần còn lại được nối liền nhau,
+ * và các clip phía sau trên cùng dòng được kéo lùi lại cho khít (không để khoảng trống).
+ */
+export function removeRanges(p: Project, id: string, ranges: [number, number][], newId: () => string): Project | null {
+  const c = p.clips.find((x) => x.id === id)
+  if (!c) return null
+  const cut = ranges
+    .map(([a, b]) => [Math.max(a, c.inPoint), Math.min(b, c.outPoint)] as [number, number])
+    .filter(([a, b]) => b - a > 0.01)
+    .sort((x, y) => x[0] - y[0])
+  if (!cut.length) return null
+  const keep: [number, number][] = []
+  let cur = c.inPoint
+  for (const [a, b] of cut) {
+    if (a - cur > 0.05) keep.push([cur, a])
+    cur = Math.max(cur, b)
+  }
+  if (c.outPoint - cur > 0.05) keep.push([cur, c.outPoint])
+  const oldEnd = clipEnd(c)
+  let t = c.start
+  const pieces: Clip[] = keep.map(([a, b], i) => {
+    const piece: Clip = {
+      ...c, id: i === 0 ? c.id : newId(), start: t, inPoint: a, outPoint: b,
+      kfs: undefined, fadeIn: i === 0 ? c.fadeIn : undefined, fadeOut: i === keep.length - 1 ? c.fadeOut : undefined,
+      fx: c.fx && (i === 0 ? c.fx : { ...c.fx, transition: null, animIn: null }),
+    }
+    t += (b - a) / c.speed
+    return piece
+  })
+  const shift = oldEnd - t
+  const rest = p.clips
+    .filter((x) => x.id !== id)
+    .map((x) => (x.trackId === c.trackId && x.start >= oldEnd - EPS ? { ...x, start: Math.max(0, x.start - shift) } : x))
+  return { ...p, clips: [...rest, ...pieces] }
+}

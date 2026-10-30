@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react'
 import type { PointerEvent as RPointerEvent } from 'react'
 import { canvasSize, fmtTime, layouts, renderFrame, type Layout, type Resolver } from '../engine/draw'
-import { fxOf, resolveClip, valueAt, withProp } from '../fx/anim'
+import { fxOf, valueAt, volumeAt, withProp } from '../fx/anim'
 import { createMediaEl, getImageDrawable } from '../media'
 import { useProject } from '../store'
 import { clamp, clipDur, clipEnd, projectDuration } from '../timeline/ops'
 import { visibleClips } from '../timeline/pick'
 import type { Clip, Project, Ratio } from '../types'
+import { useUi } from '../ui'
 
 const AR: Record<Ratio, number> = { '9:16': 9 / 16, '16:9': 16 / 9, '1:1': 1, '4:5': 4 / 5, '4:3': 4 / 3, '21:9': 21 / 9 }
 
@@ -30,7 +31,10 @@ export default function Player() {
   const wrapRef = useRef<HTMLDivElement>(null)
   const boxRef = useRef<HTMLDivElement>(null)
   const els = useRef(new Map<string, HTMLVideoElement | HTMLAudioElement>())
-  const [W, H] = canvasSize(ratio, 720)
+  const quality = useUi((s) => s.quality)
+  const autoLow = useUi((s) => s.autoLow)
+  const low = quality === '360' || (quality === 'auto' && autoLow)
+  const [W, H] = canvasSize(ratio, low ? 360 : 720)
   const ar = AR[ratio]
 
   useEffect(() => {
@@ -39,6 +43,7 @@ export default function Player() {
     const pool = els.current
     let raf = 0
     let last = performance.now()
+    let slow = 0 // đếm số khung hình vẽ quá chậm liên tiếp (máy yếu)
 
     // Đồng bộ các thẻ video/nhạc ẩn với vị trí kim chỉ
     const sync = (p: Project, t: number, playingNow: boolean) => {
@@ -58,7 +63,7 @@ export default function Player() {
           pool.set(clip.id, el)
         }
         const want = clamp(clip.inPoint + (t - clip.start) * clip.speed, 0, Math.max(0, asset.duration - 0.05))
-        const vol = resolveClip(clip, clamp(t - clip.start, 0, clipDur(clip))).volume
+        const vol = volumeAt(clip, clamp(t - clip.start, 0, clipDur(clip)))
         el.muted = clip.muted || track.muted || !covering
         el.volume = clamp(vol, 0, 1)
         if (playingNow) {
@@ -108,8 +113,17 @@ export default function Player() {
       }
       last = now
       const st = useProject.getState()
+      const t0 = performance.now()
       sync(st.project, t, st.playing)
       renderFrame(ctx, W, H, st.project, t, resolve)
+      // máy yếu: nếu vẽ chậm liên tục thì tự hạ chất lượng xem trước
+      if (useUi.getState().quality === 'auto' && !useUi.getState().autoLow && st.playing) {
+        slow = performance.now() - t0 > 45 ? slow + 1 : Math.max(0, slow - 1)
+        if (slow > 40) {
+          useUi.getState().setAutoLow(true)
+          useUi.getState().setNotice('Máy hơi chậm nên MyEdit đã hạ chất lượng xem trước cho mượt hơn (video xuất ra vẫn giữ nguyên chất lượng).')
+        }
+      }
 
       // khung chọn quanh clip đang chọn
       const box = boxRef.current

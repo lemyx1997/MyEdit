@@ -120,6 +120,15 @@ export function loopDelta(id: string, tau: number): Delta {
   }
 }
 
+/** Âm lượng của clip tại thời điểm `local` (giây từ đầu clip): gốc + khung chính + mờ dần vào/ra. */
+export function volumeAt(c: Clip, local: number): number {
+  const dur = clipDur(c)
+  let v = valueAt(c.kfs?.volume, local, c.volume)
+  if (c.fadeIn && c.fadeIn > 0 && local < c.fadeIn) v *= clamp(local / c.fadeIn, 0, 1)
+  if (c.fadeOut && c.fadeOut > 0 && dur - local < c.fadeOut) v *= clamp((dur - local) / c.fadeOut, 0, 1)
+  return v
+}
+
 export interface Resolved {
   x: number
   y: number

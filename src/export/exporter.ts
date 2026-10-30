@@ -1,7 +1,9 @@
 import { ArrayBufferTarget, Muxer } from 'mp4-muxer'
 import { canvasSize, renderFrame } from '../engine/draw'
 import { ensureFonts } from '../engine/text'
-import { createMediaEl, getFile, getImageDrawable, once, preloadGifs } from '../media'
+import { decodeAsset } from '../audio'
+import { volumeAt } from '../fx/anim'
+import { createMediaEl, getImageDrawable, once, preloadGifs } from '../media'
 import { clamp, clipDur, projectDuration } from '../timeline/ops'
 import { visibleClips } from '../timeline/pick'
 import type { Project } from '../types'
@@ -22,36 +24,27 @@ const abortCheck = (signal: AbortSignal) => {
   if (signal.aborted) throw new DOMException('Đã huỷ', 'AbortError')
 }
 
-/** Trộn toàn bộ âm thanh (video + nhạc) theo thời gian, âm lượng, tốc độ. Trả null nếu không có tiếng. */
-async function mixAudio(project: Project, duration: number): Promise<AudioBuffer | null> {
-  const ctx = new OfflineAudioContext(2, Math.ceil(duration * SR), SR)
-  const decoded = new Map<string, AudioBuffer | null>()
+/** Trộn toàn bộ âm thanh (video + nhạc) theo thời gian, âm lượng, tốc độ, mờ dần. Trả null nếu không có tiếng. */
+export async function mixAudio(project: Project, duration: number, sr = SR, channels = 2): Promise<AudioBuffer | null> {
+  const ctx = new OfflineAudioContext(channels, Math.max(1, Math.ceil(duration * sr)), sr)
   let used = 0
   for (const clip of project.clips) {
     const asset = project.assets.find((a) => a.id === clip.assetId)
     const track = project.tracks.find((t) => t.id === clip.trackId)
     if (!asset || !track || asset.kind === 'image' || clip.muted || track.muted) continue
-    if (!decoded.has(asset.id)) {
-      let buf: AudioBuffer | null = null
-      try {
-        const data = await getFile(asset.id)!.arrayBuffer()
-        buf = await new OfflineAudioContext(2, 1, SR).decodeAudioData(data)
-      } catch {
-        buf = null // video không có tiếng
-      }
-      decoded.set(asset.id, buf)
-    }
-    const buf = decoded.get(asset.id)
-    if (!buf) continue
+    const buf = await decodeAsset(asset.id)
+    if (!buf) continue // video không có tiếng
     const src = ctx.createBufferSource()
     src.buffer = buf
     src.playbackRate.value = clip.speed
     const gain = ctx.createGain()
-    const vol = clip.kfs?.volume
-    if (vol && vol.length) {
-      // âm lượng thay đổi theo khung chính
-      gain.gain.setValueAtTime(vol[0].t <= 0 ? vol[0].v : clip.volume, clip.start)
-      for (const k of vol) if (k.t > 0 && k.t <= clipDur(clip)) gain.gain.linearRampToValueAtTime(k.v, clip.start + k.t)
+    const dur = clipDur(clip)
+    if (clip.kfs?.volume?.length || clip.fadeIn || clip.fadeOut) {
+      // âm lượng thay đổi theo thời gian: lấy mẫu mỗi 20ms
+      const n = Math.max(2, Math.ceil(dur / 0.02))
+      const curve = new Float32Array(n)
+      for (let i = 0; i < n; i++) curve[i] = volumeAt(clip, (i / (n - 1)) * dur)
+      gain.gain.setValueCurveAtTime(curve, clip.start, dur)
     } else {
       gain.gain.value = clip.volume
     }
