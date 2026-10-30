@@ -7,9 +7,12 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
+    "idb-keyval": "^6.3.0",
+    "mp4-muxer": "^5.2.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zustand": "^5.0.16"
@@ -23,6 +26,7 @@
     "oxlint": "^1.89.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~7.0.2",
-    "vite": "^8.3.5"
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
   }
 }
