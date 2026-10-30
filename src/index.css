@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/* Màu giao diện: tối là mặc định, sáng khi <html data-theme="light"> */
+:root {
+  --bg: #0e1116;
+  --panel: #161b22;
+  --panel-2: #1d232c;
+  --line: #2a313c;
+  --text: #e6edf3;
+  --muted: #8b95a3;
+  --accent: #22d3ee;
+}
+:root[data-theme="light"] {
+  --bg: #eef1f5;
+  --panel: #ffffff;
+  --panel-2: #f3f5f8;
+  --line: #d6dce4;
+  --text: #1a2230;
+  --muted: #5d6877;
+  --accent: #0891b2;
+}
+html, body, #root { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, "Segoe UI", sans-serif; overflow: hidden; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
