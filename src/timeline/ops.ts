@@ -1,4 +1,5 @@
-import type { Asset, Clip, Project } from '../types'
+import { shiftKfs, upsertKf, valueAt } from '../fx/anim'
+import type { Asset, Clip, KfProp, Project, TextProps } from '../types'
 
 // Các phép chỉnh sửa timeline thuần tuý: nhận Project cũ, trả Project mới (hoặc null nếu không hợp lệ).
 // Không phụ thuộc giao diện nên kiểm thử được dễ dàng.
@@ -56,9 +57,38 @@ export function splitClip(p: Project, id: string, t: number, newId: string): Pro
   const c = p.clips.find((x) => x.id === id)
   if (!c || !(t > c.start + MIN_DUR && t < clipEnd(c) - MIN_DUR)) return null
   const src = c.inPoint + (t - c.start) * c.speed
-  const left: Clip = { ...c, outPoint: src }
-  const right: Clip = { ...c, id: newId, start: t, inPoint: src }
+  const cut = t - c.start // vị trí cắt tính từ đầu clip (trên timeline)
+  let leftKfs = c.kfs
+  let rightKfs = c.kfs
+  if (c.kfs) {
+    // giữ nguyên giá trị hai bên chỗ cắt: thêm khung chính ở mép cắt
+    leftKfs = {}
+    rightKfs = {}
+    for (const k of Object.keys(c.kfs) as KfProp[]) {
+      const list = c.kfs[k]!
+      const v = valueAt(list, cut, 0)
+      leftKfs[k] = upsertKf(list.filter((x) => x.t < cut), cut, v)
+      rightKfs[k] = upsertKf(list.filter((x) => x.t > cut).map((x) => ({ t: x.t - cut, v: x.v })), 0, v)
+    }
+  }
+  // hoạt ảnh vào/chuyển cảnh chỉ ở nửa đầu, hoạt ảnh ra chỉ ở nửa sau
+  const leftFx = c.fx && { ...c.fx, animOut: null }
+  const rightFx = c.fx && { ...c.fx, animIn: null, transition: null }
+  const left: Clip = { ...c, outPoint: src, kfs: leftKfs, fx: leftFx }
+  const right: Clip = { ...c, id: newId, start: t, inPoint: src, kfs: rightKfs, fx: rightFx }
   return { ...p, clips: p.clips.flatMap((x) => (x.id === id ? [left, right] : [x])) }
+}
+
+/** Thêm clip chữ / nhãn dán (không có file gốc) vào dòng chữ. */
+export function addTextClip(p: Project, trackId: string, start: number, id: string, text: TextProps, dur = 3): Project | null {
+  const track = p.tracks.find((t) => t.id === trackId)
+  if (!track || track.kind !== 'text') return null
+  const clip: Clip = {
+    id, assetId: '', trackId,
+    start: findFreeStart(p, trackId, start, dur),
+    inPoint: 0, outPoint: dur, speed: 1, volume: 1, muted: true, text,
+  }
+  return { ...p, clips: [...p.clips, clip] }
 }
 
 export function deleteClip(p: Project, id: string): Project {
@@ -91,7 +121,7 @@ export function trimStart(p: Project, id: string, newStart: number): Project {
   if (lo > hi) return p
   const ns = clamp(newStart, lo, hi)
   const delta = ns - c.start
-  return replace(p, id, (x) => ({ ...x, start: ns, inPoint: Math.max(0, x.inPoint + delta * x.speed) }))
+  return replace(p, id, (x) => ({ ...x, start: ns, inPoint: Math.max(0, x.inPoint + delta * x.speed), kfs: shiftKfs(x.kfs, -delta) }))
 }
 
 /** Kéo mép phải: đổi điểm kết thúc, không vượt quá file gốc và không đè clip kế bên. */
@@ -102,7 +132,7 @@ export function trimEnd(p: Project, id: string, newEnd: number): Project {
   const nextStart = others(p, c.trackId, id)
     .filter((o) => o.start >= clipEnd(c) - EPS)
     .reduce((m, o) => Math.min(m, o.start), Infinity)
-  const hi = Math.min(nextStart, c.start + (maxOut(asset) - c.inPoint) / c.speed)
+  const hi = Math.min(nextStart, c.start + ((c.text ? IMAGE_MAX : maxOut(asset)) - c.inPoint) / c.speed)
   const lo = c.start + MIN_DUR
   if (lo > hi) return p
   const ne = clamp(newEnd, lo, hi)

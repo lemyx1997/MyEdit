@@ -16,6 +16,7 @@ export function unregisterFile(id: string) {
   files.delete(id)
   urls.delete(id)
   images.delete(id)
+  gifs.delete(id)
 }
 
 export const getFile = (id: string) => files.get(id)
@@ -45,6 +46,68 @@ export function getImage(assetId: string): HTMLImageElement {
     images.set(assetId, img)
   }
   return img
+}
+
+// ---- GIF động: tách thành từng khung hình để vẽ đúng thời điểm (cả khi xuất video) ----
+interface Gif {
+  frames: ImageBitmap[]
+  starts: number[]
+  total: number
+}
+const gifs = new Map<string, Gif | 'loading' | 'failed'>()
+
+function loadGif(id: string) {
+  if (gifs.has(id)) return
+  gifs.set(id, 'loading')
+  void (async () => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const Decoder = (globalThis as any).ImageDecoder
+      if (!Decoder) throw new Error('no ImageDecoder')
+      const dec = new Decoder({ data: await files.get(id)!.arrayBuffer(), type: 'image/gif' })
+      await dec.tracks.ready
+      const n: number = dec.tracks.selectedTrack.frameCount
+      const frames: ImageBitmap[] = []
+      const starts: number[] = []
+      let total = 0
+      for (let i = 0; i < Math.min(n, 400); i++) {
+        const r = await dec.decode({ frameIndex: i })
+        frames.push(await createImageBitmap(r.image))
+        starts.push(total)
+        total += Math.max(0.02, (r.image.duration ?? 100000) / 1e6)
+        r.image.close()
+      }
+      gifs.set(id, { frames, starts, total })
+    } catch {
+      gifs.set(id, 'failed')
+    }
+  })()
+}
+
+/** Chờ GIF giải mã xong (dùng trước khi xuất video). */
+export async function preloadGifs(ids: string[]) {
+  for (const id of ids) {
+    if (files.get(id)?.type !== 'image/gif') continue
+    loadGif(id)
+    while (gifs.get(id) === 'loading') await new Promise((r) => setTimeout(r, 30))
+  }
+}
+
+/** Hình của một ảnh tại thời điểm `t` giây kể từ đầu clip (ảnh tĩnh thì luôn như nhau, GIF thì chạy theo thời gian). */
+export function getImageDrawable(assetId: string, t: number): { src: CanvasImageSource; w: number; h: number } | null {
+  if (files.get(assetId)?.type === 'image/gif') {
+    loadGif(assetId)
+    const g = gifs.get(assetId)
+    if (g && g !== 'loading' && g !== 'failed') {
+      const tt = g.total > 0 ? t % g.total : 0
+      let i = g.starts.length - 1
+      while (i > 0 && g.starts[i] > tt) i--
+      const f = g.frames[i]
+      return { src: f, w: f.width, h: f.height }
+    }
+  }
+  const img = getImage(assetId)
+  return img.complete && img.naturalWidth ? { src: img, w: img.naturalWidth, h: img.naturalHeight } : null
 }
 
 export function once(el: HTMLElement, ok: string, ms = 20000): Promise<void> {
@@ -79,7 +142,7 @@ export async function probe(file: File, kind: AssetKind): Promise<Omit<Asset, 'i
     if (kind === 'image') {
       const img = new Image()
       img.src = url
-      await img.decode()
+      await once(img, 'load')
       return { name: file.name, kind, duration: 0, width: img.naturalWidth, height: img.naturalHeight, thumb: thumbFrom(img, img.naturalWidth, img.naturalHeight) }
     }
     const el = document.createElement(kind === 'video' ? 'video' : 'audio')

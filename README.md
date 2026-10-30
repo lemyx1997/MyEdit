@@ -6,9 +6,20 @@
 
 Dùng thử: https://lemyx1997.github.io/MyEdit/
 
-> Trạng thái: **Giai đoạn 1** (dựng cơ bản) đã xong. Đang phát triển.
+> Trạng thái: **Giai đoạn 2** (hiệu ứng thẩm mỹ) đã xong. Đang phát triển.
 
-## Tính năng hiện có
+## Hiệu ứng (Giai đoạn 2)
+- **Chữ:** 11 mẫu có sẵn, 15 font (có tiếng Việt, đóng gói sẵn, không cần mạng), màu, viền, đổ bóng/phát sáng, nền, căn lề, nhiều dòng.
+- **Nhãn dán:** 48 emoji, cộng ảnh PNG/GIF của bạn (GIF động chạy đúng cả khi xuất video).
+- **Bộ lọc màu:** 21 bộ lọc + chỉnh tay: sáng, tương phản, bão hoà, nhiệt độ màu, làm mờ, làm nét, làm tối viền.
+- **Chuyển cảnh:** 16 kiểu (mờ dần, trượt, quét, phóng, xoay, vòng tròn…).
+- **Hoạt ảnh vào / ra / lặp** cho mọi clip, chữ, nhãn dán.
+- **Hoà trộn & độ trong suốt**, **mặt nạ** (tròn, chữ nhật, trái tim), **xoá phông xanh**.
+- **Khung chính (keyframe)** cho vị trí, kích thước, xoay, độ trong suốt, âm lượng.
+- Kéo / xoay / phóng clip trực tiếp trên khung xem trước.
+- **Nền khung hình:** đen, màu, nhoè theo video hoặc ảnh.
+
+## Tính năng cơ bản (Giai đoạn 1)
 - Nhập video, ảnh, nhạc bằng kéo thả; xem trước và phát trực tiếp.
 - Dòng thời gian nhiều lớp: kéo thả clip, kéo mép để cắt đầu/cuối, tách cảnh, nhân đôi, xoá, đổi dòng, nam châm hít.
 - Chỉnh âm lượng, tắt tiếng, đổi tốc độ 0.1x–10x; ẩn/tắt tiếng từng dòng.
@@ -29,7 +40,7 @@ Dùng thử: https://lemyx1997.github.io/MyEdit/
 ## Lộ trình
 - [x] Giai đoạn 0 – Khung giao diện tối 4 vùng, chạy trên GitHub Pages
 - [x] Giai đoạn 1 – Nhập clip, cắt/ghép, tốc độ, âm lượng, hoàn tác, xuất MP4
-- [ ] Giai đoạn 2 – Chữ, nhãn dán, bộ lọc, chuyển cảnh, keyframe, mặt nạ
+- [x] Giai đoạn 2 – Chữ, nhãn dán, bộ lọc, chuyển cảnh, keyframe, mặt nạ
 - [ ] Giai đoạn 3 – Sóng âm, ghi âm, phụ đề tự động (Whisper trong trình duyệt)
 - [ ] Giai đoạn 4 – Mẫu dự án, đa ngôn ngữ, proxy cho máy yếu
 

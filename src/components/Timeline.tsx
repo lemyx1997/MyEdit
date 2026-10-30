@@ -5,6 +5,7 @@ import { useProject } from '../store'
 import {
   clamp, clipDur, clipEnd, moveClip, projectDuration, snapMove, snapPoint, trimEnd, trimStart,
 } from '../timeline/ops'
+import { fxOf } from '../fx/anim'
 import type { Clip } from '../types'
 
 const LANE_H = 48
@@ -142,7 +143,7 @@ export default function Timeline() {
                 </div>
                 <div
                   className="relative"
-                  style={{ width, background: track.kind === 'audio' ? 'rgba(52,211,153,0.04)' : undefined }}
+                  style={{ width, background: track.kind === 'audio' ? 'rgba(52,211,153,0.04)' : track.kind === 'text' ? 'rgba(167,139,250,0.05)' : undefined }}
                   onPointerDown={() => act().select(null)}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => {
@@ -168,7 +169,7 @@ export default function Timeline() {
                             width: Math.max(4, clipDur(c) * pps),
                             height: LANE_H - 8,
                             outline: sel ? '2px solid var(--accent)' : '1px solid rgba(255,255,255,0.15)',
-                            background: track.kind === 'audio' ? '#0f766e' : '#1e3a5f',
+                            background: track.kind === 'audio' ? '#0f766e' : track.kind === 'text' ? '#5b21b6' : '#1e3a5f',
                             backgroundImage: a?.thumb ? `url(${a.thumb})` : undefined,
                             backgroundSize: 'auto 100%',
                             backgroundRepeat: 'repeat-x',
@@ -176,8 +177,9 @@ export default function Timeline() {
                           }}
                         >
                           <div className="truncate bg-black/55 px-1">
-                            {a?.name} {c.speed !== 1 && `· ${c.speed.toFixed(1)}x`}
+                            {c.text ? c.text.text.split('\n')[0] : a?.name} {c.speed !== 1 && `· ${c.speed.toFixed(1)}x`}
                           </div>
+                          {fxOf(c).transition && <div className="absolute bottom-0 left-2 rounded-tr bg-amber-400 px-1 text-[9px] font-bold text-black" title="Có chuyển cảnh">⇆</div>}
                           <div onPointerDown={(e) => startDrag(e, c, 'l')} className="absolute inset-y-0 left-0 w-2 cursor-ew-resize bg-white/40" />
                           <div onPointerDown={(e) => startDrag(e, c, 'r')} className="absolute inset-y-0 right-0 w-2 cursor-ew-resize bg-white/40" />
                         </div>

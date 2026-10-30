@@ -1,7 +1,9 @@
 import { ArrayBufferTarget, Muxer } from 'mp4-muxer'
 import { canvasSize, renderFrame } from '../engine/draw'
-import { createMediaEl, getFile, getImage, once } from '../media'
-import { clipEnd, projectDuration } from '../timeline/ops'
+import { ensureFonts } from '../engine/text'
+import { createMediaEl, getFile, getImageDrawable, once, preloadGifs } from '../media'
+import { clamp, clipDur, projectDuration } from '../timeline/ops'
+import { visibleClips } from '../timeline/pick'
 import type { Project } from '../types'
 
 export interface ExportOptions {
@@ -45,7 +47,14 @@ async function mixAudio(project: Project, duration: number): Promise<AudioBuffer
     src.buffer = buf
     src.playbackRate.value = clip.speed
     const gain = ctx.createGain()
-    gain.gain.value = clip.volume
+    const vol = clip.kfs?.volume
+    if (vol && vol.length) {
+      // âm lượng thay đổi theo khung chính
+      gain.gain.setValueAtTime(vol[0].t <= 0 ? vol[0].v : clip.volume, clip.start)
+      for (const k of vol) if (k.t > 0 && k.t <= clipDur(clip)) gain.gain.linearRampToValueAtTime(k.v, clip.start + k.t)
+    } else {
+      gain.gain.value = clip.volume
+    }
     src.connect(gain).connect(ctx.destination)
     src.start(clip.start, clip.inPoint, clip.outPoint - clip.inPoint)
     used++
@@ -105,6 +114,8 @@ export async function exportMp4(project: Project, o: ExportOptions): Promise<Blo
   const videos = new Map<string, HTMLVideoElement>()
   try {
     o.onProgress(0.05, 'Đang chuẩn bị hình…')
+    await ensureFonts(project)
+    await preloadGifs(project.assets.filter((a) => a.kind === 'image').map((a) => a.id))
     for (const clip of project.clips) {
       const asset = project.assets.find((a) => a.id === clip.assetId)
       if (asset?.kind !== 'video') continue
@@ -123,17 +134,15 @@ export async function exportMp4(project: Project, o: ExportOptions): Promise<Blo
       abortCheck(o.signal)
       if (encError) throw encError
       const t = i / fps
-      for (const clip of project.clips) {
+      for (const clip of visibleClips(project, t)) {
         const v = videos.get(clip.id)
-        if (!v || !(clip.start <= t && t < clipEnd(clip))) continue
+        if (!v) continue
         const want = clip.inPoint + (t - clip.start) * clip.speed
-        await seek(v, Math.min(want, Math.max(0, v.duration - 0.001)))
+        await seek(v, clamp(want, 0, Math.max(0, v.duration - 0.001)))
       }
       renderFrame(ctx, W, H, project, t, (clip, asset) => {
-        if (asset.kind === 'image') {
-          const img = getImage(asset.id)
-          return { src: img, w: img.naturalWidth, h: img.naturalHeight }
-        }
+        if (!asset) return null
+        if (asset.kind === 'image') return getImageDrawable(asset.id, t - clip.start)
         const v = videos.get(clip.id)
         return v ? { src: v, w: v.videoWidth, h: v.videoHeight } : null
       })

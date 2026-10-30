@@ -1,11 +1,14 @@
 import { create } from 'zustand'
 import { getFile, kindOf, probe, registerFile, unregisterFile } from './media'
 import { deleteFile, saveFile } from './persist'
+import { hasKfAt, removeKfAt, resolveClip, upsertKf, withProp } from './fx/anim'
+import { DEFAULT_TEXT } from './fx/catalog'
 import {
-  addClip, clamp, clipEnd, deleteClip, duplicateClip, pasteClip, projectDuration,
+  addClip, addTextClip, clamp, clipDur, clipEnd, deleteClip, duplicateClip, pasteClip, projectDuration,
   setSpeed as opSetSpeed, splitClip,
 } from './timeline/ops'
-import type { Clip, Project, Ratio } from './types'
+import { transitionDur } from './timeline/pick'
+import type { Background, Clip, Fx, KfProp, Project, Ratio, TextProps } from './types'
 import { useUi } from './ui'
 
 const HISTORY = 100
@@ -13,14 +16,24 @@ const uid = () => Math.random().toString(36).slice(2, 10)
 const notify = (m: string) => useUi.getState().setNotice(m)
 
 export function defaultProject(): Project {
-  const track = (id: string, kind: 'video' | 'audio', name: string) => ({ id, kind, name, muted: false, hidden: false })
+  const track = (id: string, kind: 'video' | 'audio' | 'text', name: string) => ({ id, kind, name, muted: false, hidden: false })
   return {
     name: 'Dự án chưa đặt tên',
     ratio: '16:9',
+    bg: { type: 'black' },
     assets: [],
     clips: [],
-    tracks: [track('v2', 'video', 'Video 2'), track('v1', 'video', 'Video 1'), track('a1', 'audio', 'Âm thanh 1'), track('a2', 'audio', 'Âm thanh 2')],
+    tracks: [track('t1', 'text', 'Chữ & nhãn dán'), track('v2', 'video', 'Video 2'), track('v1', 'video', 'Video 1'), track('a1', 'audio', 'Âm thanh 1'), track('a2', 'audio', 'Âm thanh 2')],
   }
+}
+
+/** Dự án lưu từ phiên bản cũ: bổ sung dòng chữ và nền nếu còn thiếu. */
+export function migrate(p: Project): Project {
+  let q = p
+  if (!q.tracks.some((t) => t.kind === 'text')) {
+    q = { ...q, tracks: [{ id: 't1', kind: 'text', name: 'Chữ & nhãn dán', muted: false, hidden: false }, ...q.tracks] }
+  }
+  return q.bg ? q : { ...q, bg: { type: 'black' } }
 }
 
 /** Khi hoàn tác/làm lại: giữ nguyên danh sách file và tên dự án hiện tại, chỉ lấy lại phần dựng. */
@@ -28,7 +41,7 @@ const reconcile = (snap: Project, cur: Project): Project => ({
   ...snap,
   name: cur.name,
   assets: cur.assets,
-  clips: snap.clips.filter((c) => cur.assets.some((a) => a.id === c.assetId)),
+  clips: snap.clips.filter((c) => c.text || cur.assets.some((a) => a.id === c.assetId)),
 })
 
 interface ProjectState {
@@ -70,6 +83,15 @@ interface ProjectState {
   paste: () => void
   setSpeed: (id: string, speed: number) => void
   patchClip: (id: string, patch: Partial<Clip>, live?: boolean) => void
+  addText: (props?: TextProps) => void
+  updateSelected: (fn: (c: Clip) => Clip, live?: boolean) => void
+  patchFx: (patch: Partial<Fx>, live?: boolean) => void
+  updateText: (patch: Partial<TextProps>, live?: boolean) => void
+  setProp: (prop: KfProp, value: number, live?: boolean) => void
+  toggleKf: (prop: KfProp) => void
+  setTransition: (id: string | null, dur?: number) => void
+  setAnim: (kind: 'in' | 'out' | 'loop', id: string | null, dur?: number) => void
+  setBg: (bg: Background) => void
 }
 
 export const useProject = create<ProjectState>((set, get) => ({
@@ -85,7 +107,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   clipboard: null,
   gestureBase: null,
 
-  hydrate: (p) => set({ project: p ?? defaultProject(), loaded: true, past: [], future: [] }),
+  hydrate: (p) => set({ project: p ? migrate(p) : defaultProject(), loaded: true, past: [], future: [] }),
 
   commit: (p) => {
     const s = get()
@@ -242,6 +264,77 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   setSpeed: (id, speed) => get().setLive(opSetSpeed(get().project, id, speed)),
+
+  addText: (props = DEFAULT_TEXT) => {
+    const p = get().project
+    const track = p.tracks.find((t) => t.kind === 'text')
+    if (!track) return
+    const id = uid()
+    const next = addTextClip(p, track.id, get().playhead, id, props)
+    if (!next) return
+    get().commit(next)
+    set({ selectedId: id })
+  },
+
+  updateSelected: (fn, live) => {
+    const { project, selectedId } = get()
+    if (!selectedId) return notify('Hãy chọn một clip trên dòng thời gian trước.')
+    const next = { ...project, clips: project.clips.map((c) => (c.id === selectedId ? fn(c) : c)) }
+    if (live) get().setLive(next)
+    else get().commit(next)
+  },
+
+  patchFx: (patch, live) => get().updateSelected((c) => ({ ...c, fx: { ...c.fx, ...patch } }), live),
+
+  updateText: (patch, live) => get().updateSelected((c) => (c.text ? { ...c, text: { ...c.text, ...patch } } : c), live),
+
+  setProp: (prop, value, live) => {
+    const { project, selectedId, playhead } = get()
+    if (!selectedId) return
+    const next = withProp(project, selectedId, prop, value, playhead)
+    if (live) get().setLive(next)
+    else get().commit(next)
+  },
+
+  // Bật/tắt khung chính (keyframe) của một thuộc tính tại vị trí kim chỉ
+  toggleKf: (prop) => {
+    const { project, selectedId, playhead } = get()
+    const c = project.clips.find((x) => x.id === selectedId)
+    if (!c) return notify('Hãy chọn một clip trước.')
+    const local = clamp(playhead - c.start, 0, clipDur(c))
+    const list = c.kfs?.[prop]
+    let nextList
+    if (hasKfAt(list, local)) {
+      nextList = removeKfAt(list!, local)
+    } else {
+      const cur = resolveClip(c, local)
+      const v = prop === 'volume' ? cur.volume : prop === 'rotation' ? cur.rot : cur[prop]
+      nextList = upsertKf(list ?? [], local, v)
+    }
+    const kfs = { ...c.kfs }
+    if (nextList.length) kfs[prop] = nextList
+    else delete kfs[prop]
+    get().commit({ ...project, clips: project.clips.map((x) => (x.id === c.id ? { ...c, kfs } : x)) })
+  },
+
+  setTransition: (id, dur = 1) => {
+    const { project, selectedId } = get()
+    const c = project.clips.find((x) => x.id === selectedId)
+    if (!c) return notify('Hãy chọn clip đứng sau chỗ cần chuyển cảnh.')
+    if (id) {
+      const prev = project.clips.find((o) => o.trackId === c.trackId && o.id !== c.id && Math.abs(clipEnd(o) - c.start) < 0.02)
+      if (!prev) return notify('Chuyển cảnh cần hai clip nằm sát nhau trên cùng một dòng. Hãy chọn clip đứng sau.')
+      dur = transitionDur(prev, c, dur)
+    }
+    get().patchFx({ transition: id ? { id, dur } : null })
+  },
+
+  setAnim: (kind, id, dur = 0.6) => {
+    if (kind === 'loop') get().patchFx({ animLoop: id })
+    else get().patchFx(kind === 'in' ? { animIn: id ? { id, dur } : null } : { animOut: id ? { id, dur } : null })
+  },
+
+  setBg: (bg) => get().commit({ ...get().project, bg }),
 
   patchClip: (id, patch, live) => {
     const p = get().project

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { fmtTime } from '../engine/draw'
 import { useProject } from '../store'
 import { TABS, useUi } from '../ui'
+import Library from './Library'
 
 const KIND_ICON = { video: '🎬', audio: '🎵', image: '🖼' } as const
 
@@ -100,7 +101,7 @@ export default function MediaPanel() {
             )}
           </>
         ) : (
-          <p className="text-sm" style={{ color: 'var(--muted)' }}>Mục “{current.label}” sẽ được làm ở các giai đoạn sau.</p>
+          <Library tab={current.id} />
         )}
       </div>
     </aside>

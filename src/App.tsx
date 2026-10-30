@@ -29,7 +29,7 @@ export default function App() {
         for (const [id, blob] of saved.blobs) registerFile(id, blob)
         const assets = saved.project.assets.filter((a) => saved.blobs.has(a.id))
         saved.project.assets = assets
-        saved.project.clips = saved.project.clips.filter((c) => assets.some((a) => a.id === c.assetId))
+        saved.project.clips = saved.project.clips.filter((c) => c.text || assets.some((a) => a.id === c.assetId))
       }
       useProject.getState().hydrate(saved?.project ?? null)
     })
